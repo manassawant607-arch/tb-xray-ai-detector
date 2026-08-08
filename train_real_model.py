@@ -47,17 +47,33 @@ def find_data_dir(path):
     return None
 
 
-def make_generators(data_dir, seed=42):
+def make_generators(data_dir, seed=42, augment=False):
+    """Train/val generators. Augmentation (flip/rotation/zoom/shift) on train only."""
     from tensorflow.keras.preprocessing.image import ImageDataGenerator
-    datagen = ImageDataGenerator(rescale=1.0 / 255, validation_split=0.2)
-    train = datagen.flow_from_directory(
+    train_cfg = dict(rescale=1.0 / 255, validation_split=0.2)
+    if augment:
+        train_cfg.update(dict(
+            horizontal_flip=True, rotation_range=10, zoom_range=0.1,
+            width_shift_range=0.1, height_shift_range=0.1))
+    train = ImageDataGenerator(**train_cfg).flow_from_directory(
         data_dir, target_size=IMG_SIZE, batch_size=BATCH_SIZE,
         class_mode="binary", subset="training", seed=seed)
-    val = datagen.flow_from_directory(
+    val = ImageDataGenerator(
+        rescale=1.0 / 255, validation_split=0.2).flow_from_directory(
         data_dir, target_size=IMG_SIZE, batch_size=BATCH_SIZE,
-        class_mode="binary", subset="validation", seed=seed)
+        class_mode="binary", subset="validation", seed=seed, shuffle=False)
     print("class indices:", train.class_indices)
     return train, val
+
+
+def class_weights_from_generator(gen):
+    """Balanced class weights for an imbalanced TB dataset (Normal >> TB)."""
+    import numpy as np
+    from sklearn.utils.class_weight import compute_class_weight
+    labels = gen.classes
+    classes = np.unique(labels)
+    weights = compute_class_weight("balanced", classes=classes, y=labels)
+    return dict(zip(classes.tolist(), weights.tolist()))
 
 
 def build_cnn():
@@ -90,12 +106,32 @@ def build_mobilenet():
     return Model(inputs=base.input, outputs=preds)
 
 
-def train_model(model, train, val, epochs, name):
-    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+METRICS = ["accuracy"]
+EXTRA_METRICS = ["precision", "recall", "auc"]
+
+
+def train_model(model, train, val, epochs, name,
+                class_weight=None, early_stop=False, extra_metrics=False):
+    """Compile + fit. Defaults mirror ai_drp.py exactly (accuracy, no callbacks).
+
+    Opt-in enhancements: --early-stop (EarlyStopping+ModelCheckpoint),
+    --balance (class weights), and extra_metrics (precision/recall/auc).
+    """
+    from tensorflow.keras.callbacks import (EarlyStopping, ModelCheckpoint)
+    metrics = METRICS + (EXTRA_METRICS if extra_metrics else [])
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=metrics)
     model.summary()
-    model.fit(train, validation_data=val, epochs=epochs)
-    loss, acc = model.evaluate(val, verbose=0)
-    print(f"{name}: val_loss={loss:.4f} val_acc={acc:.4f}")
+    cbs = []
+    if early_stop:
+        cbs = [
+            EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True),
+            ModelCheckpoint(f"{name}_best.keras", monitor="val_loss",
+                            save_best_only=True, verbose=0),
+        ]
+    model.fit(train, validation_data=val, epochs=epochs,
+              callbacks=cbs or None, class_weight=class_weight)
+    results = model.evaluate(val, verbose=0, return_dict=True)
+    print(f"{name}: " + "  ".join(f"{k}={v:.4f}" for k, v in results.items()))
     return model
 
 
@@ -108,6 +144,7 @@ def train_resistance(csv_path):
         print(f"[skip] resistance model: {csv_path} not found")
         return None
     df = pd.read_csv(csv_path)
+    print("trends columns:", df.columns.tolist())
     feats = ["TB_Cases", "TB_Deaths", "TB_Treatment_Success_Rate"]
     missing = [c for c in feats if c not in df.columns]
     if missing or "TB_Incidence_Rate" not in df.columns:
@@ -115,8 +152,9 @@ def train_resistance(csv_path):
         return None
     X = df[feats]
     y = df["TB_Incidence_Rate"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    res = RandomForestRegressor(random_state=42)
+    # ai_drp.py: train_test_split(X, y, test_size=0.2) + RandomForestRegressor()
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    res = RandomForestRegressor()
     res.fit(X_train, y_train)
     print(f"resistance model: train R^2={res.score(X_train, y_train):.3f} "
           f"test R^2={res.score(X_test, y_test):.3f}")
@@ -127,8 +165,17 @@ def main():
     p = argparse.ArgumentParser(description="Train TB models on real data (local).")
     p.add_argument("--data", default=DEFAULT_DATA, help="dataset root dir")
     p.add_argument("--trends", default=DEFAULT_TRENDS, help="TB trends CSV path")
-    p.add_argument("--epochs", type=int, default=10, help="training epochs")
+    p.add_argument("--epochs", type=int, default=5,
+                   help="training epochs (ai_drp.py uses 5)")
     p.add_argument("--no-mobilenet", action="store_true", help="skip MobileNetV2 model")
+    p.add_argument("--augment", action="store_true",
+                   help="training-time augmentation (off by default, matches ai_drp.py)")
+    p.add_argument("--balance", action="store_true",
+                   help="balanced class weights (off by default, matches ai_drp.py)")
+    p.add_argument("--early-stop", action="store_true",
+                   help="EarlyStopping + ModelCheckpoint (off by default)")
+    p.add_argument("--metrics", action="store_true",
+                   help="also track precision/recall/auc (off by default)")
     args = p.parse_args()
 
     data_dir = find_data_dir(args.data)
@@ -140,23 +187,33 @@ def main():
         print(f"Expected: {DEFAULT_DATA}/Normal/ and {DEFAULT_DATA}/Tuberculosis/")
         return 1
 
-    print(f"dataset: {data_dir}")
-    train, val = make_generators(data_dir)
+    print(f"dataset: {data_dir}  epochs={args.epochs}  "
+          f"augment={args.augment}  balance={args.balance}")
+    train, val = make_generators(data_dir, augment=args.augment)
+    cw = class_weights_from_generator(train) if args.balance else None
+    if cw:
+        print("class weights:", cw)
 
     print("\n=== Training from-scratch CNN ->", CNN_MODEL_PATH, "===")
-    cnn = train_model(build_cnn(), train, val, args.epochs, "CNN")
+    cnn = train_model(build_cnn(), train, val, args.epochs, "CNN",
+                      class_weight=cw, early_stop=args.early_stop,
+                      extra_metrics=args.metrics)
     cnn.save(CNN_MODEL_PATH)
     print(f"saved -> {CNN_MODEL_PATH}")
 
     if not args.no_mobilenet:
         print("\n=== Training MobileNetV2 transfer model ->", TL_MODEL_PATH, "===")
-        tl = train_model(build_mobilenet(), train, val, args.epochs, "MobileNetV2")
+        tl = train_model(build_mobilenet(), train, val, args.epochs,
+                         "MobileNetV2",
+                         class_weight=cw, early_stop=args.early_stop,
+                         extra_metrics=args.metrics)
         tl.save(TL_MODEL_PATH)
         print(f"saved -> {TL_MODEL_PATH}")
 
     print("\n=== Resistance prototype (RandomForest) ===")
     train_resistance(args.trends)
-    print("\nDone. Run `python app.py` to use the trained model.")
+    print("\nDone. Run `python app.py` to use the trained model,")
+    print("or `python evaluate_model.py` for metrics + confusion matrix + Grad-CAM.")
     return 0
 
 
