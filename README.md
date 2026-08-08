@@ -14,17 +14,16 @@ Two entry points are provided:
 
 | File | Purpose |
 | --- | --- |
-| `app.py` | Gradio web app. Takes an X-ray image and returns TB detection, mutation, drug-resistance, and treatment outputs. Runs real inference if `tb_detection_model.h5` is present, otherwise demo mode. |
-| `tb_inference.py` | Shared, testable inference logic (preprocessing, prediction interpretation, model loading, demo fallback). |
+| `app.py` | Gradio web app. Takes an X-ray image and returns TB detection, mutation, drug-resistance, treatment, and confidence. Runs real inference if `tb_detection_model.h5` is present, otherwise demo mode. |
+| `tb_inference.py` | Shared, testable inference logic (preprocessing, prediction interpretation, confidence, model loading, demo fallback). |
+| `train_demo_model.py` | Trains a tiny CNN on **synthetic** image data to produce `tb_detection_model.h5`, so the inference path runs end-to-end without the real dataset. |
 | `ai_drp.py` | Colab-exported script containing the original full workflow (dataset download, preprocessing, two model definitions, training, demos). |
 | `ai_drp.ipynb` | Cleaned, parameterized Jupyter/Colab notebook of the same workflow with tunable config, augmentation, and Dropout. |
-| `tests/test_inference.py` | Unit tests for preprocessing, prediction interpretation, and the demo fallback (run without a trained model). |
+| `tests/test_inference.py` | Unit tests for preprocessing, prediction interpretation, confidence, and the demo fallback (run without a trained model). |
 | `samples/` | Synthetic placeholder images + docs on downloading the real Kaggle dataset. |
 | `requirements.txt` | Python dependencies: `gradio`, `tensorflow`, `numpy`, `pillow`. |
 
 A trained Keras model named `tb_detection_model.h5` is expected in the repository root to run inference.
-
----
 
 ## Repository structure
 
@@ -32,6 +31,7 @@ A trained Keras model named `tb_detection_model.h5` is expected in the repositor
 tb-xray-ai-detector/
 ├── app.py              # Gradio web app (inference + demo fallback)
 ├── tb_inference.py     # Shared, testable inference logic
+├── train_demo_model.py # Train a synthetic-data model for the inference path
 ├── ai_drp.py           # Original Colab training script
 ├── ai_drp.ipynb        # Cleaned, parameterized notebook
 ├── requirements.txt    # Python dependencies
@@ -65,10 +65,19 @@ pip install -r requirements.txt
 
 ### 3. Prepare the trained model
 
-The demo scripts expect a trained Keras model named `tb_detection_model.h5` in the repository root.
+The app expects a trained Keras model named `tb_detection_model.h5` in the repository root.
 
 - If you already have a trained model, place it at the repo root as `tb_detection_model.h5`.
-- Otherwise, train one following the [Training](#training-colab--kaggle) section below.
+- To quickly enable the real-inference path **without the real dataset**, train a tiny CNN on synthetic data:
+
+  ```bash
+  python train_demo_model.py    # writes tb_detection_model.h5 (~1 min on CPU)
+  ```
+
+  > This model is trained on class-correlated synthetic gradients — it makes the
+  > inference code path run end-to-end but is **not** medically meaningful.
+- For a real model, train on the actual TB dataset following the
+  [Training](#training-colab--kaggle) section below.
 
 ### 4. Run the demo
 
@@ -77,10 +86,10 @@ python app.py
 ```
 
 This launches a Gradio web interface (default port `12000`) that returns TB
-detection, mutation, drug-resistance, and treatment outputs. If
-`tb_detection_model.h5` is present it runs **real inference**; otherwise it
-starts in **demo mode** with clearly-labelled placeholder output. Try it with
-the synthetic images in `samples/`.
+detection, mutation, drug-resistance, treatment, and a **confidence** score.
+If `tb_detection_model.h5` is present it runs **real inference**; otherwise it
+starts in **demo mode** with clearly-labelled placeholder output. The UI ships
+with built-in examples from `samples/`. Try it with the synthetic images there.
 
 CLI options:
 

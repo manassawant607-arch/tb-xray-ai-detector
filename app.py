@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import os
 
 import gradio as gr
 
@@ -23,7 +24,7 @@ import tb_inference as tbi
 def predict(image):
     """Gradio callback: real inference if a model exists, else demo fallback."""
     if image is None:
-        return ("No image provided", "", "", "")
+        return ("No image provided", "", "", "", "")
     if tbi.model_available():
         model = tbi.load_model()
         return tbi.predict_tb(image, model)
@@ -31,9 +32,14 @@ def predict(image):
 
 
 def build_interface():
-    status = ("Inference mode: trained model loaded."
-              if tbi.model_available()
-              else "Demo mode: no trained model found — output is placeholder.")
+    model_ok = tbi.model_available()
+    status = ("✅ Inference mode — trained model loaded."
+              if model_ok
+              else "⚠️ Demo mode — no trained model found; output is placeholder.")
+    examples = (
+        [["samples/sample_normal.png"], ["samples/sample_tb_like.png"]]
+        if os.path.exists("samples/sample_normal.png") else None
+    )
     return gr.Interface(
         fn=predict,
         inputs=gr.Image(type="pil", label="Upload Chest X-ray"),
@@ -42,6 +48,7 @@ def build_interface():
             gr.Textbox(label="Mutation Analysis"),
             gr.Textbox(label="Drug Resistance Prediction"),
             gr.Textbox(label="Treatment Recommendation"),
+            gr.Textbox(label="Confidence"),
         ],
         title="AI TB Detection + Drug Resistance + Treatment System",
         description=status,
@@ -49,6 +56,8 @@ def build_interface():
             "⚠️ Research/educational prototype — NOT a medical device. "
             "Do not use for diagnosis or treatment decisions."
         ),
+        examples=examples,
+        theme=gr.themes.Soft(),
     )
 
 
