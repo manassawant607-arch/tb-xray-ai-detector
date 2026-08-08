@@ -21,6 +21,8 @@ Two entry points are provided:
 | `app.py` | Gradio web app. Takes an X-ray image and returns TB detection, mutation, drug-resistance, treatment, and confidence. Runs real inference if `tb_detection_model.h5` is present, otherwise demo mode. |
 | `tb_inference.py` | Shared, testable inference logic (preprocessing, prediction interpretation, confidence, model loading, demo fallback). |
 | `train_demo_model.py` | Trains a tiny CNN on **synthetic** image data to produce `tb_detection_model.h5`, so the inference path runs end-to-end without the real dataset. |
+| `train_real_model.py` | Trains on **real** TB data locally — mirrors the `ai_drp.py` pipeline (same CNN + MobileNetV2 + RandomForest resistance prototype) but runs outside Colab. |
+| `xray_validator.py` | From-scratch validity gate: rejects non-X-ray images (colour photos, blanks, tiny) so "wrong photos" are never falsely detected as TB. |
 | `ai_drp.py` | Colab-exported script containing the original full workflow (dataset download, preprocessing, two model definitions, training, demos). |
 | `ai_drp.ipynb` | Cleaned, parameterized Jupyter/Colab notebook of the same workflow with tunable config, augmentation, and Dropout. |
 | `tests/test_inference.py` | Unit tests for preprocessing, prediction interpretation, confidence, and the demo fallback (run without a trained model). |
@@ -97,6 +99,18 @@ The app expects a trained Keras model named `tb_detection_model.h5` in the repos
 
   > This model is trained on class-correlated synthetic gradients — it makes the
   > inference code path run end-to-end but is **not** medically meaningful.
+- To train on **real data locally** (mirrors the `ai_drp.py` Colab pipeline),
+  first download the Kaggle TB Chest Radiography Database, then run:
+
+  ```bash
+  kaggle datasets download -d tawsifurrahman/tuberculosis-tb-chest-xray-dataset
+  unzip -q tuberculosis-tb-chest-xray-dataset.zip   # -> TB_Chest_Radiography_Database/
+  python train_real_model.py --epochs 10             # -> tb_detection_model.h5 (+ tb_detector_ai.h5)
+  ```
+
+  `train_real_model.py` uses the same Sequential CNN, the same MobileNetV2
+  transfer-learning model, and the same RandomForest resistance prototype as
+  `ai_drp.py`, but runs locally (no `google.colab` / `!` shell commands).
 - For a real model, train on the actual TB dataset following the
   [Training](#training-colab--kaggle) section below.
 
