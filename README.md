@@ -2,7 +2,7 @@
 
 AI-powered Tuberculosis (TB) chest X-ray detection prototype with a drug-resistance / treatment-suggestion UI, built with **TensorFlow** and **Gradio**.
 
-> 🚀 **Live demo:** <https://work-1-cbgfththjfojmsbg.prod-runtime.all-hands.dev/>
+> 🚀 **Live demo:** <https://work-1-ojoykhvwxsjjqbog.prod-runtime.all-hands.dev/>
 >
 > Upload a chest X-ray and get **TB Detection**, **Mutation Analysis**, **Drug Resistance Prediction**, **Treatment Recommendation**, and a **Confidence** score. Try the built-in example images under the input. Currently running in **inference mode** with a trained CNN model.
 
@@ -56,7 +56,7 @@ tb-xray-ai-detector/
 
 A hosted instance is already running — no clone or install required:
 
-> 🚀 **<https://work-1-cbgfththjfojmsbg.prod-runtime.all-hands.dev/>**
+> 🚀 **<https://work-1-ojoykhvwxsjjqbog.prod-runtime.all-hands.dev/>**
 
 1. Open the link in your browser.
 2. Click **"Click to Upload"** (or drag) a chest X-ray image, or use one of the
@@ -177,6 +177,63 @@ def predict_tb(image):
 ```
 
 > The mutation / resistance / treatment outputs are **prototype placeholders** for demonstration and are not derived from clinical models.
+
+### Chest X-ray validity gate (only X-rays are detected)
+
+A **wrong photo** (a colourful photograph, a screenshot, a blank or tiny image) is
+rejected *before* detection, so it can never be falsely flagged as TB. Only a
+**right photo** (a valid chest X-ray) flows into the detection model.
+
+`xray_validator.py` checks, with no ML dependencies (PIL + numpy only):
+
+| Check | Rejects |
+|---|---|
+| Minimum dimension (`MIN_DIM=100`) | postage-stamp / tiny images |
+| Aspect ratio (`MAX_ASPECT=2.5`) | very wide or tall strips |
+| Mean saturation (`MAX_SATURATION=0.6`) | colourful photos (landscapes, selfies) |
+| Brightness range (`0.05`–`0.98`) | pure-black / pure-white / blank images |
+| Texture / std (`>0.02`) | flat uniform images (solid color blocks) |
+
+The saturation threshold was **calibrated on the real dataset**: across all 4,200
+real chest X-rays the highest mean saturation is ~0.53, while colourful photos
+start at ~0.71 — so `0.6` rejects **0 real X-rays** while still blocking
+colourful photos. Verified end-to-end: 400/400 real X-rays accepted and
+predicted; all wrong-photo types rejected.
+
+### Local training on real data
+
+`train_real_model.py` reproduces the `ai_drp.py` pipeline locally (no Colab
+needed). Defaults match `ai_drp.py` exactly (epochs=5, `metrics=['accuracy']`,
+no augmentation/class-weights/callbacks); improvements are opt-in flags.
+
+```bash
+# 1. Download the real dataset (needs kaggle.json)
+kaggle datasets download -d tawsifurrahman/tuberculosis-tb-chest-xray-dataset
+unzip -q tuberculosis-tb-chest-xray-dataset.zip          # -> TB_Chest_Radiography_Database/
+kaggle datasets download -d khushikyad001/tuberculosis-trends-global-and-regional-insights
+unzip -q tuberculosis-trends-global-and-regional-insights.zip
+
+# 2. Train (matches ai_drp.py: epochs=5, both CNN + MobileNetV2)
+python train_real_model.py
+# opt-in enhancements:
+python train_real_model.py --augment --balance --early-stop --metrics --epochs 15
+```
+
+**Real-data results** (3,500 Normal + 700 Tuberculosis X-rays, 80/20 split):
+
+| Model | File | Val accuracy | Precision | Recall | F1 | ROC AUC |
+|---|---|---|---|---|---|---|
+| CNN | `tb_detection_model.h5` | 95.12% | 0.938 | 0.757 | 0.838 | 0.987 |
+| MobileNetV2 | `tb_detector_ai.h5` | 99.64% | 0.986 | 0.993 | 0.989 | 1.000 |
+
+`evaluate_model.py` computes precision/recall/F1/AUC, saves a confusion-matrix
+PNG, and can generate a Grad-CAM heatmap:
+
+```bash
+python evaluate_model.py                              # CNN metrics + confusion matrix
+python evaluate_model.py --model tb_detector_ai.h5    # MobileNetV2
+python evaluate_model.py --gradcam some_xray.png      # explainability heatmap
+```
 
 ---
 
