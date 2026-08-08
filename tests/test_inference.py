@@ -45,17 +45,23 @@ def test_model_available_false_for_missing(tmp_path):
     assert tbi.model_available(str(tmp_path / "nope.h5")) is False
 
 
-def test_demo_predict_returns_four_fields():
+def test_demo_predict_returns_five_fields():
     out = tbi.demo_predict(make_image())
-    assert len(out) == 4
+    assert len(out) == 5
     assert all(isinstance(field, str) and field for field in out)
     assert out[0].startswith("[DEMO]")
 
 
 def test_demo_predict_none_image():
     out = tbi.demo_predict(None)
-    assert len(out) == 4
+    assert len(out) == 5
     assert "[DEMO]" in out[0]
+
+
+def test_confidence_format():
+    assert tbi.confidence(0.9) == "90.0%"
+    assert tbi.confidence(0.1) == "90.0%"
+    assert tbi.confidence(0.5) == "50.0%"
 
 
 def test_pipeline_labels_consistent():

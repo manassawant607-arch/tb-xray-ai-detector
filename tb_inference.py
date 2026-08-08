@@ -48,17 +48,25 @@ def load_model(path=MODEL_PATH):
     return _model
 
 
+def confidence(pred):
+    """Confidence in the predicted class, as a percentage string."""
+    return f"{max(pred, 1 - pred) * 100:.1f}%"
+
+
 def predict_tb(image, model):
-    """Run real inference: preprocess -> model.predict -> interpret."""
+    """Run real inference: preprocess -> model.predict -> interpret.
+
+    Returns (tb, mutation, resistance, treatment, confidence).
+    """
     img = preprocess(image)
     pred = float(model.predict(img, verbose=0)[0][0])
-    return interpret_prediction(pred)
+    return (*interpret_prediction(pred), confidence(pred))
 
 
 def demo_predict(image):
     """Fallback used when no trained model is present.
 
-    Returns the same 4-field layout so the UI is fully exercisable, but clearly
+    Returns the same 5-field layout so the UI is fully exercisable, but clearly
     labels every field as a demo placeholder. Uses image mean brightness only to
     make the output feel responsive, not as a real signal.
     """
@@ -73,4 +81,5 @@ def demo_predict(image):
         "[DEMO] mutation analysis unavailable",
         "[DEMO] drug-resistance prediction unavailable",
         "[DEMO] treatment recommendation unavailable",
+        "—",
     )
