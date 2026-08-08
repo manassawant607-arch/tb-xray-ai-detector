@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Trained models (large; do not commit)
+*.h5
+*.keras
+*.pb
+saved_model/
+variables/
+
+# Dataset / archives
+TB_Chest_Radiography_Database/
+*.zip
+kaggle.json
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
