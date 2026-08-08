@@ -2,6 +2,10 @@
 
 AI-powered Tuberculosis (TB) chest X-ray detection prototype with a drug-resistance / treatment-suggestion UI, built with **TensorFlow** and **Gradio**.
 
+> 🚀 **Live demo:** <https://work-1-cbgfththjfojmsbg.prod-runtime.all-hands.dev/>
+>
+> Upload a chest X-ray and get **TB Detection**, **Mutation Analysis**, **Drug Resistance Prediction**, **Treatment Recommendation**, and a **Confidence** score. Try the built-in example images under the input. Currently running in **inference mode** with a trained CNN model.
+
 > ⚠️ **Medical disclaimer:** This project is a research / educational prototype and is **NOT** a medical device. Do **not** use it for diagnosis or treatment decisions. Always consult a qualified healthcare professional.
 
 ---
@@ -45,6 +49,23 @@ tb-xray-ai-detector/
 ---
 
 ## Quickstart
+
+### Try the live demo (no setup)
+
+A hosted instance is already running — no clone or install required:
+
+> 🚀 **<https://work-1-cbgfththjfojmsbg.prod-runtime.all-hands.dev/>**
+
+1. Open the link in your browser.
+2. Click **"Click to Upload"** (or drag) a chest X-ray image, or use one of the
+   built-in **Examples** below the input.
+3. Click **Submit**.
+4. Read the five outputs: **TB Detection**, **Mutation Analysis**, **Drug
+   Resistance Prediction**, **Treatment Recommendation**, and **Confidence**.
+
+The banner above the input shows whether the app is in
+`✅ Inference mode` (a trained model is loaded) or `⚠️ Demo mode` (placeholder
+output). You can also call it programmatically via the **Use via API** button.
 
 ### 1. Clone the repository
 
