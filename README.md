@@ -22,6 +22,9 @@ Two entry points are provided:
 | `tb_inference.py` | Shared, testable inference logic (preprocessing, prediction interpretation, confidence, model loading, demo fallback). |
 | `train_demo_model.py` | Trains a tiny CNN on **synthetic** image data to produce `tb_detection_model.h5`, so the inference path runs end-to-end without the real dataset. |
 | `train_real_model.py` | Trains on **real** TB data locally — mirrors the `ai_drp.py` pipeline (same CNN + MobileNetV2 + RandomForest resistance prototype) but runs outside Colab. |
+| `setup_kaggle.py` | Sets up `kaggle.json` credentials and downloads + unzips both real datasets used by `ai_drp.py` (TB X-rays + trends CSV). |
+| `evaluate_model.py` | Computes precision/recall/F1/AUC, saves a confusion matrix, and generates a Grad-CAM heatmap on the real validation set. |
+| `REAL_DATA_RESULTS.md` | Full verification log of the real-data run (training, evaluation, X-ray validity gate on all 4,200 images). |
 | `xray_validator.py` | From-scratch validity gate: rejects non-X-ray images (colour photos, blanks, tiny) so "wrong photos" are never falsely detected as TB. |
 | `ai_drp.py` | Colab-exported script containing the original full workflow (dataset download, preprocessing, two model definitions, training, demos). |
 | `ai_drp.ipynb` | Cleaned, parameterized Jupyter/Colab notebook of the same workflow with tunable config, augmentation, and Dropout. |
@@ -202,16 +205,27 @@ predicted; all wrong-photo types rejected.
 
 ### Local training on real data
 
-`train_real_model.py` reproduces the `ai_drp.py` pipeline locally (no Colab
-needed). Defaults match `ai_drp.py` exactly (epochs=5, `metrics=['accuracy']`,
-no augmentation/class-weights/callbacks); improvements are opt-in flags.
+`setup_kaggle.py` + `train_real_model.py` reproduce the **entire `ai_drp.py`
+pipeline locally** (no Colab needed). Every step of `ai_drp.py` is covered:
+
+| `ai_drp.py` step | Lines | Local equivalent |
+|---|---|---|
+| `!pip install kaggle`, copy `kaggle.json`, chmod 600 | 10–17 | `python setup_kaggle.py` |
+| Download + unzip TB chest X-ray dataset | 19–21 | `python setup_kaggle.py` |
+| `ImageDataGenerator` rescale + 80/20 split, 224×224 | 34–57 | `train_real_model.make_generators()` |
+| from-scratch CNN → `tb_detection_model.h5` | 59–93 | `train_real_model.build_cnn()` + `train_model()` |
+| MobileNetV2 transfer → `tb_detector_ai.h5` | 95–131 | `train_real_model.build_mobilenet()` |
+| Download trends CSV + RandomForest resistance | 133–161 | `setup_kaggle.py` + `train_resistance()` |
+| Gradio TB/mutation/resistance/treatment UI | 163–426 | `app.py` (with X-ray validity gate) |
+
+`train_real_model.py` defaults match `ai_drp.py` exactly (epochs=5,
+`metrics=['accuracy']`, no augmentation/class-weights/callbacks);
+improvements are opt-in flags.
 
 ```bash
-# 1. Download the real dataset (needs kaggle.json)
-kaggle datasets download -d tawsifurrahman/tuberculosis-tb-chest-xray-dataset
-unzip -q tuberculosis-tb-chest-xray-dataset.zip          # -> TB_Chest_Radiography_Database/
-kaggle datasets download -d khushikyad001/tuberculosis-trends-global-and-regional-insights
-unzip -q tuberculosis-trends-global-and-regional-insights.zip
+# 1. Place kaggle.json (from https://www.kaggle.com/settings -> API -> Create New Token)
+#    in the repo root, then:
+python setup_kaggle.py        # installs kaggle, sets up credentials, downloads + unzips both datasets
 
 # 2. Train (matches ai_drp.py: epochs=5, both CNN + MobileNetV2)
 python train_real_model.py
@@ -220,11 +234,12 @@ python train_real_model.py --augment --balance --early-stop --metrics --epochs 1
 ```
 
 **Real-data results** (3,500 Normal + 700 Tuberculosis X-rays, 80/20 split):
+see [`REAL_DATA_RESULTS.md`](REAL_DATA_RESULTS.md) for the full verification.
 
 | Model | File | Val accuracy | Precision | Recall | F1 | ROC AUC |
 |---|---|---|---|---|---|---|
-| CNN | `tb_detection_model.h5` | 95.12% | 0.938 | 0.757 | 0.838 | 0.987 |
-| MobileNetV2 | `tb_detector_ai.h5` | 99.64% | 0.986 | 0.993 | 0.989 | 1.000 |
+| CNN | `tb_detection_model.h5` | 94.88% | 0.922 | 0.757 | 0.831 | 0.987 |
+| MobileNetV2 | `tb_detector_ai.h5` | 99.76% | 0.986 | 0.993 | 0.989 | 1.000 |
 
 `evaluate_model.py` computes precision/recall/F1/AUC, saves a confusion-matrix
 PNG, and can generate a Grad-CAM heatmap:
