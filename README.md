@@ -14,8 +14,12 @@ Two entry points are provided:
 
 | File | Purpose |
 | --- | --- |
-| `app.py` | Minimal Gradio demo app. Launches a web UI that takes an X-ray image and returns a placeholder response. |
-| `ai_drp.py` | Colab-exported script containing the full workflow: dataset download, preprocessing, model training (from-scratch CNN + MobileNetV2 transfer learning), model saving, and several Gradio demo variations. |
+| `app.py` | Gradio web app. Takes an X-ray image and returns TB detection, mutation, drug-resistance, and treatment outputs. Runs real inference if `tb_detection_model.h5` is present, otherwise demo mode. |
+| `tb_inference.py` | Shared, testable inference logic (preprocessing, prediction interpretation, model loading, demo fallback). |
+| `ai_drp.py` | Colab-exported script containing the original full workflow (dataset download, preprocessing, two model definitions, training, demos). |
+| `ai_drp.ipynb` | Cleaned, parameterized Jupyter/Colab notebook of the same workflow with tunable config, augmentation, and Dropout. |
+| `tests/test_inference.py` | Unit tests for preprocessing, prediction interpretation, and the demo fallback (run without a trained model). |
+| `samples/` | Synthetic placeholder images + docs on downloading the real Kaggle dataset. |
 | `requirements.txt` | Python dependencies: `gradio`, `tensorflow`, `numpy`, `pillow`. |
 
 A trained Keras model named `tb_detection_model.h5` is expected in the repository root to run inference.
@@ -26,9 +30,15 @@ A trained Keras model named `tb_detection_model.h5` is expected in the repositor
 
 ```
 tb-xray-ai-detector/
-├── app.py              # Minimal Gradio demo UI
-├── ai_drp.py           # Training + full prototype demos (Colab script)
+├── app.py              # Gradio web app (inference + demo fallback)
+├── tb_inference.py     # Shared, testable inference logic
+├── ai_drp.py           # Original Colab training script
+├── ai_drp.ipynb        # Cleaned, parameterized notebook
 ├── requirements.txt    # Python dependencies
+├── tests/              # pytest unit tests
+├── samples/            # Synthetic placeholder images + dataset docs
+├── .github/workflows/  # CI (lint + test + dependency check)
+├── .flake8             # Lint config
 └── README.md
 ```
 
@@ -66,7 +76,26 @@ The demo scripts expect a trained Keras model named `tb_detection_model.h5` in t
 python app.py
 ```
 
-This launches a Gradio web interface. Upload a chest X-ray image to get a response. When a trained model is present, the `ai_drp.py` demos will return the model's prediction along with prototype resistance/treatment output.
+This launches a Gradio web interface (default port `12000`) that returns TB
+detection, mutation, drug-resistance, and treatment outputs. If
+`tb_detection_model.h5` is present it runs **real inference**; otherwise it
+starts in **demo mode** with clearly-labelled placeholder output. Try it with
+the synthetic images in `samples/`.
+
+CLI options:
+
+```bash
+python app.py --port 12000   # fixed port
+python app.py --share         # public Gradio share link
+```
+
+### 5. Run the tests
+
+```bash
+pip install pytest flake8
+pytest -q                     # unit tests (no model required)
+flake8 .                      # lint
+```
 
 ---
 
@@ -128,10 +157,15 @@ def predict_tb(image):
 
 ## Running the full prototype
 
-`ai_drp.py` includes several Gradio interfaces demonstrating different output styles. To run a specific demo locally:
+`ai_drp.ipynb` is the cleaned, parameterized version of the workflow (config
+cell with `EPOCHS_*`, `IMG_SIZE`, `BATCH_SIZE`; added augmentation and Dropout).
+Open it in [Colab](https://colab.research.google.com/) and run the cells in order.
+
+`ai_drp.py` is the original raw Colab export and contains several duplicated
+Gradio interfaces. To run a specific demo from it locally:
 
 1. Ensure `tb_detection_model.h5` exists in the repository root (or retrain to create it).
-2. Open `ai_drp.py`, keep the interface block you want to run, and remove or comment out the others (the file contains multiple `app.launch()` / `demo.launch()` calls as exported from Colab).
+2. Open `ai_drp.py`, keep the interface block you want to run, and comment out the others (the file contains multiple `app.launch()` / `demo.launch()` calls).
 3. Run the script:
 
    ```bash
@@ -140,7 +174,7 @@ def predict_tb(image):
 
 4. Open the Gradio link printed in the console.
 
-> Because `ai_drp.py` is a raw Colab export, it contains Colab-specific shell commands (`!pip`, `!kaggle`, `from google.colab import files`) that only run inside Colab. Strip or adapt those lines if running purely locally.
+> Both files contain Colab-specific shell commands (`!pip`, `!kaggle`, `from google.colab import files`) that only run inside Colab. Strip or adapt those lines if running purely locally — for local inference prefer `app.py`, which already handles the model-loading fallback.
 
 ---
 
@@ -153,12 +187,34 @@ def predict_tb(image):
 
 ---
 
-## Possible next steps
+## Testing & CI
 
-- Clean up `ai_drp.py` into a proper Jupyter notebook with parameter tuning.
-- Add the inference loading logic to `app.py` so the minimal app uses `tb_detection_model.h5` when present.
-- Add automated tests and a CI workflow for linting and dependency checks.
-- Add a small set of anonymized sample X-rays for a quick local demo (if licensing allows).
+### Unit tests
+
+`tests/test_inference.py` covers the testable parts of the pipeline **without
+requiring a trained model** (so CI stays fast):
+
+- preprocessing output shape/range and grayscale→RGB conversion
+- prediction interpretation at positive, negative, and threshold boundaries
+- `model_available()` for a missing path
+- demo fallback returns 4 non-empty fields (including the `None` image case)
+
+```bash
+pytest -q
+```
+
+### Linting
+
+```bash
+flake8 .          # config in .flake8; ai_drp.py excluded (raw Colab export)
+```
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push/PR to `main`:
+
+1. **lint-and-test** — installs deps, runs `flake8`, runs `pytest`.
+2. **dependency-check** — verifies `requirements.txt` installs cleanly and core imports succeed.
 
 ---
 

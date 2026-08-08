@@ -1,0 +1,13 @@
+[flake8]
+max-line-length = 100
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    ai_drp.py
+# E402: module-level import not at top (tests add sys.path first)
+# W503: line break before binary operator (conflicts with PEP 8 update)
+extend-ignore = E402, W503
