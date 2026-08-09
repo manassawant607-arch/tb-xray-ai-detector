@@ -27,3 +27,9 @@ kaggle.json
 .DS_Store
 .idea/
 .vscode/
+
+# Real-data artifacts (downloaded/generated, not source)
+Tuberculosis_Trends.csv
+train_real.log
+confusion_matrix.png
+gradcam_*.png

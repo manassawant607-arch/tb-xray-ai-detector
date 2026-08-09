@@ -2,7 +2,7 @@
 
 AI-powered Tuberculosis (TB) chest X-ray detection prototype with a drug-resistance / treatment-suggestion UI, built with **TensorFlow** and **Gradio**.
 
-> 🚀 **Live demo:** <https://work-1-cbgfththjfojmsbg.prod-runtime.all-hands.dev/>
+> 🚀 **Live demo:** <https://work-1-ojoykhvwxsjjqbog.prod-runtime.all-hands.dev/>
 >
 > Upload a chest X-ray and get **TB Detection**, **Mutation Analysis**, **Drug Resistance Prediction**, **Treatment Recommendation**, and a **Confidence** score. Try the built-in example images under the input. Currently running in **inference mode** with a trained CNN model.
 
@@ -21,6 +21,11 @@ Two entry points are provided:
 | `app.py` | Gradio web app. Takes an X-ray image and returns TB detection, mutation, drug-resistance, treatment, and confidence. Runs real inference if `tb_detection_model.h5` is present, otherwise demo mode. |
 | `tb_inference.py` | Shared, testable inference logic (preprocessing, prediction interpretation, confidence, model loading, demo fallback). |
 | `train_demo_model.py` | Trains a tiny CNN on **synthetic** image data to produce `tb_detection_model.h5`, so the inference path runs end-to-end without the real dataset. |
+| `train_real_model.py` | Trains on **real** TB data locally — mirrors the `ai_drp.py` pipeline (same CNN + MobileNetV2 + RandomForest resistance prototype) but runs outside Colab. |
+| `setup_kaggle.py` | Sets up `kaggle.json` credentials and downloads + unzips both real datasets used by `ai_drp.py` (TB X-rays + trends CSV). |
+| `evaluate_model.py` | Computes precision/recall/F1/AUC, saves a confusion matrix, and generates a Grad-CAM heatmap on the real validation set. |
+| `REAL_DATA_RESULTS.md` | Full verification log of the real-data run (training, evaluation, X-ray validity gate on all 4,200 images). |
+| `xray_validator.py` | From-scratch validity gate: rejects non-X-ray images (colour photos, blanks, tiny) so "wrong photos" are never falsely detected as TB. |
 | `ai_drp.py` | Colab-exported script containing the original full workflow (dataset download, preprocessing, two model definitions, training, demos). |
 | `ai_drp.ipynb` | Cleaned, parameterized Jupyter/Colab notebook of the same workflow with tunable config, augmentation, and Dropout. |
 | `tests/test_inference.py` | Unit tests for preprocessing, prediction interpretation, confidence, and the demo fallback (run without a trained model). |
@@ -54,7 +59,7 @@ tb-xray-ai-detector/
 
 A hosted instance is already running — no clone or install required:
 
-> 🚀 **<https://work-1-cbgfththjfojmsbg.prod-runtime.all-hands.dev/>**
+> 🚀 **<https://work-1-ojoykhvwxsjjqbog.prod-runtime.all-hands.dev/>**
 
 1. Open the link in your browser.
 2. Click **"Click to Upload"** (or drag) a chest X-ray image, or use one of the
@@ -97,6 +102,18 @@ The app expects a trained Keras model named `tb_detection_model.h5` in the repos
 
   > This model is trained on class-correlated synthetic gradients — it makes the
   > inference code path run end-to-end but is **not** medically meaningful.
+- To train on **real data locally** (mirrors the `ai_drp.py` Colab pipeline),
+  first download the Kaggle TB Chest Radiography Database, then run:
+
+  ```bash
+  kaggle datasets download -d tawsifurrahman/tuberculosis-tb-chest-xray-dataset
+  unzip -q tuberculosis-tb-chest-xray-dataset.zip   # -> TB_Chest_Radiography_Database/
+  python train_real_model.py --epochs 10             # -> tb_detection_model.h5 (+ tb_detector_ai.h5)
+  ```
+
+  `train_real_model.py` uses the same Sequential CNN, the same MobileNetV2
+  transfer-learning model, and the same RandomForest resistance prototype as
+  `ai_drp.py`, but runs locally (no `google.colab` / `!` shell commands).
 - For a real model, train on the actual TB dataset following the
   [Training](#training-colab--kaggle) section below.
 
@@ -163,6 +180,75 @@ def predict_tb(image):
 ```
 
 > The mutation / resistance / treatment outputs are **prototype placeholders** for demonstration and are not derived from clinical models.
+
+### Chest X-ray validity gate (only X-rays are detected)
+
+A **wrong photo** (a colourful photograph, a screenshot, a blank or tiny image) is
+rejected *before* detection, so it can never be falsely flagged as TB. Only a
+**right photo** (a valid chest X-ray) flows into the detection model.
+
+`xray_validator.py` checks, with no ML dependencies (PIL + numpy only):
+
+| Check | Rejects |
+|---|---|
+| Minimum dimension (`MIN_DIM=100`) | postage-stamp / tiny images |
+| Aspect ratio (`MAX_ASPECT=2.5`) | very wide or tall strips |
+| Mean saturation (`MAX_SATURATION=0.6`) | colourful photos (landscapes, selfies) |
+| Brightness range (`0.05`–`0.98`) | pure-black / pure-white / blank images |
+| Texture / std (`>0.02`) | flat uniform images (solid color blocks) |
+
+The saturation threshold was **calibrated on the real dataset**: across all 4,200
+real chest X-rays the highest mean saturation is ~0.53, while colourful photos
+start at ~0.71 — so `0.6` rejects **0 real X-rays** while still blocking
+colourful photos. Verified end-to-end: 400/400 real X-rays accepted and
+predicted; all wrong-photo types rejected.
+
+### Local training on real data
+
+`setup_kaggle.py` + `train_real_model.py` reproduce the **entire `ai_drp.py`
+pipeline locally** (no Colab needed). Every step of `ai_drp.py` is covered:
+
+| `ai_drp.py` step | Lines | Local equivalent |
+|---|---|---|
+| `!pip install kaggle`, copy `kaggle.json`, chmod 600 | 10–17 | `python setup_kaggle.py` |
+| Download + unzip TB chest X-ray dataset | 19–21 | `python setup_kaggle.py` |
+| `ImageDataGenerator` rescale + 80/20 split, 224×224 | 34–57 | `train_real_model.make_generators()` |
+| from-scratch CNN → `tb_detection_model.h5` | 59–93 | `train_real_model.build_cnn()` + `train_model()` |
+| MobileNetV2 transfer → `tb_detector_ai.h5` | 95–131 | `train_real_model.build_mobilenet()` |
+| Download trends CSV + RandomForest resistance | 133–161 | `setup_kaggle.py` + `train_resistance()` |
+| Gradio TB/mutation/resistance/treatment UI | 163–426 | `app.py` (with X-ray validity gate) |
+
+`train_real_model.py` defaults match `ai_drp.py` exactly (epochs=5,
+`metrics=['accuracy']`, no augmentation/class-weights/callbacks);
+improvements are opt-in flags.
+
+```bash
+# 1. Place kaggle.json (from https://www.kaggle.com/settings -> API -> Create New Token)
+#    in the repo root, then:
+python setup_kaggle.py        # installs kaggle, sets up credentials, downloads + unzips both datasets
+
+# 2. Train (matches ai_drp.py: epochs=5, both CNN + MobileNetV2)
+python train_real_model.py
+# opt-in enhancements:
+python train_real_model.py --augment --balance --early-stop --metrics --epochs 15
+```
+
+**Real-data results** (3,500 Normal + 700 Tuberculosis X-rays, 80/20 split):
+see [`REAL_DATA_RESULTS.md`](REAL_DATA_RESULTS.md) for the full verification.
+
+| Model | File | Val accuracy | Precision | Recall | F1 | ROC AUC |
+|---|---|---|---|---|---|---|
+| CNN | `tb_detection_model.h5` | 94.88% | 0.922 | 0.757 | 0.831 | 0.987 |
+| MobileNetV2 | `tb_detector_ai.h5` | 99.76% | 0.986 | 0.993 | 0.989 | 1.000 |
+
+`evaluate_model.py` computes precision/recall/F1/AUC, saves a confusion-matrix
+PNG, and can generate a Grad-CAM heatmap:
+
+```bash
+python evaluate_model.py                              # CNN metrics + confusion matrix
+python evaluate_model.py --model tb_detector_ai.h5    # MobileNetV2
+python evaluate_model.py --gradcam some_xray.png      # explainability heatmap
+```
 
 ---
 

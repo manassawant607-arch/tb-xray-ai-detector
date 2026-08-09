@@ -19,12 +19,23 @@ import os
 import gradio as gr
 
 import tb_inference as tbi
+import xray_validator as xv
 
 
 def predict(image):
-    """Gradio callback: real inference if a model exists, else demo fallback."""
+    """Gradio callback: validate -> real inference if a model exists, else demo.
+
+    A "wrong photo" (not a chest X-ray) is rejected here and is never detected,
+    so it cannot be falsely flagged as TB. A "right photo" (valid X-ray) flows
+    into the unchanged detection logic in tb_inference.py.
+    """
     if image is None:
         return ("No image provided", "", "", "", "")
+
+    ok, reason = xv.is_chest_xray(image)
+    if not ok:
+        return (reason, "", "", "", "—")
+
     if tbi.model_available():
         model = tbi.load_model()
         return tbi.predict_tb(image, model)
