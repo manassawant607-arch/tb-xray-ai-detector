@@ -270,6 +270,155 @@ A confidence score (sigmoid distance from the 0.5 threshold) is also returned:
 | Treatment Recommendation | `Bedaquiline + Linezolid + Levofloxacin` | `Standard TB therapy` |
 | Confidence | sigmoid % | sigmoid % |
 
+### Drug Resistance Prediction — all about the app
+
+This section documents the **running web app end-to-end**, focused on how the
+drug-resistance / mutation / treatment outputs are produced and displayed.
+
+#### App architecture
+
+```
+User uploads image
+        │
+        ▼
+┌──────────────────────────┐
+│ app.py predict(image)    │   Gradio callback
+└──────────────────────────┘
+        │
+        ▼
+┌──────────────────────────┐
+│ 1. X-ray validity gate   │   xray_validator.is_chest_xray()
+│    (wrong photo?)        │   heuristic + RandomForest gate
+└──────────────────────────┘
+        │
+   ┌────┴────┐
+   │ NO      │ YES → return "rejected: not a chest X-ray"
+   │         │     (detection + resistance + treatment all blank)
+   ▼         │
+┌──────────────────────────┐
+│ 2. TB detection model    │   tb_inference.predict_tb()
+│    CNN / MobileNetV2     │   sigmoid score in [0, 1]
+└──────────────────────────┘
+        │
+        ▼
+┌──────────────────────────┐
+│ 3. Resistance pipeline   │   tb_inference.interpret_prediction()
+│    Layer 1 rule chain    │   rpoB → Rifampicin Resistant → regimen
+└──────────────────────────┘
+        │
+        ▼
+┌──────────────────────────┐
+│ 4. 5 outputs to UI       │   TB / Mutation / Resistance /
+│    + Confidence %        │   Treatment / Confidence
+└──────────────────────────┘
+```
+
+#### Input
+
+| Field | Type | Accepted |
+|---|---|---|
+| Upload Chest X-ray | PIL image (PNG/JPG/JPEG) | Only valid chest X-rays; non-X-rays are rejected |
+
+The single Gradio input (`gr.Image(type="pil")`) accepts any image format
+Pillow can read. **Only chest X-rays pass the validity gate** — all other
+images (photos, screenshots, blank, tiny) are rejected with a reason and never
+reach the detection model, so they can never produce a false "TB Detected"
+with a drug-resistance label.
+
+#### Outputs (5 text fields)
+
+The app's `gr.Interface` returns exactly five textboxes:
+
+1. **TB Detection** — `TB Detected` / `Normal` / rejection reason
+2. **Mutation Analysis** — `rpoB mutation detected` / `No mutation detected`
+3. **Drug Resistance Prediction** — `Rifampicin Resistant (Possible MDR-TB)` /
+   `Drug Sensitive`
+4. **Treatment Recommendation** — `Bedaquiline + Linezolid + Levofloxacin` /
+   `Standard TB therapy`
+5. **Confidence** — percentage from the sigmoid score
+
+#### Confidence calculation
+
+Confidence is derived from the model's sigmoid output `p` and the 0.5
+threshold (see `tb_inference.py`):
+
+```
+if p > 0.5:   confidence = p * 100          (% confident it is TB)
+else:         confidence = (1 - p) * 100    (% confident it is Normal)
+```
+
+So a score of `0.98` → **98% TB**, and `0.03` → **97% Normal**. The further
+the sigmoid sits from 0.5, the higher the confidence.
+
+#### Run modes
+
+| Mode | When | Output |
+|---|---|---|
+| **Inference mode** ✅ | `tb_detection_model.h5` present | real CNN/MobileNetV2 prediction + Layer 1 resistance chain |
+| **Demo mode** ⚠️ | no model file | placeholder `[DEMO]` outputs (resistance labels still shown) |
+
+The banner above the upload box shows which mode is active:
+`✅ Inference mode — trained model loaded.` or
+`⚠️ Demo mode — no trained model found; output is placeholder.`
+
+#### Running the app
+
+```bash
+python app.py                 # default host 0.0.0.0, port 12000
+python app.py --port 12000    # fixed port
+python app.py --share         # public Gradio share link
+```
+
+#### Using the app via API
+
+Click **"Use via API"** in the footer, or POST directly:
+
+```python
+import requests
+resp = requests.post(
+    "http://localhost:12000/api/predict",
+    json={"data": [{"path": "chest_xray.png", "orig_name": "xray.png",
+                    "size": 12345, "mime_type": "image/png",
+                    "is_stream": False}]}
+)
+tb, mutation, resistance, treatment, confidence = resp.json()["data"]
+```
+
+#### Example output (real TB X-ray)
+
+```
+TB Detection:                 TB Detected
+Mutation Analysis:            rpoB mutation detected
+Drug Resistance Prediction:   Rifampicin Resistant (Possible MDR-TB)
+Treatment Recommendation:     Bedaquiline + Linezolid + Levofloxacin
+Confidence:                   100.0%
+```
+
+#### Example output (real Normal X-ray)
+
+```
+TB Detection:                 Normal
+Mutation Analysis:            No mutation detected
+Drug Resistance Prediction:   Drug Sensitive
+Treatment Recommendation:     Standard TB therapy
+Confidence:                   98.1%
+```
+
+#### Example output (wrong photo — rejected)
+
+```
+TB Detection:                 rejected: not a chest X-ray (looks like a photo,
+                              screenshot, or other non-X-ray image)
+Mutation Analysis:            (blank)
+Drug Resistance Prediction:   (blank)
+Treatment Recommendation:     (blank)
+Confidence:                   —
+```
+
+When a wrong photo is rejected, **all resistance / mutation / treatment
+outputs are blank** — so no drug-resistance label is ever attached to a
+non-X-ray image.
+
 #### Limitations & clinical context
 
 - **No molecular data.** Real DR-TB diagnosis requires GeneXpert MTB/RIF,
