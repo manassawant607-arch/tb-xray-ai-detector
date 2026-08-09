@@ -492,7 +492,12 @@ flake8 .          # config in .flake8; ai_drp.py excluded (raw Colab export)
 
 ## License
 
-This project is provided for research and educational purposes. Add a `LICENSE` file (e.g., MIT) as appropriate for your use case.
+This project is licensed under the **MIT License** — see the
+[`LICENSE`](LICENSE) file for details.
+
+> ⚠️ **Medical disclaimer:** Even under the MIT license, this project is a
+> research / educational prototype and is **NOT** a medical device. Do **not**
+> use it for diagnosis or treatment decisions.
 
 ---
 
