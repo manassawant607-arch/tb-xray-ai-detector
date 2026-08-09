@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TB X-Ray AI Detector</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🫁</text></svg>">
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --border: #334155; --text: #e2e8f0;
+    --muted: #94a3b8; --accent: #3b82f6; --accent-hover: #2563eb;
+    --green: #22c55e; --red: #ef4444; --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem 1rem;
+  }
+  .container { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; text-align: center; margin-bottom: 0.25rem; }
+  .subtitle { text-align: center; color: var(--muted); margin-bottom: 0.5rem; font-size: 0.95rem; }
+  .repo-link { text-align: center; margin-bottom: 0.5rem; }
+  .repo-link a { color: var(--accent); font-size: 0.85rem; text-decoration: none; }
+  .repo-link a:hover { text-decoration: underline; }
+  .disclaimer {
+    text-align: center; color: var(--amber); font-size: 0.8rem;
+    background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 8px; padding: 0.6rem; margin-bottom: 1.5rem;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem;
+  }
+  .panel h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--accent); }
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 10px;
+    padding: 2rem 1rem; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent); background: rgba(59, 130, 246, 0.05);
+  }
+  .upload-zone img { max-width: 100%; max-height: 280px; border-radius: 8px; }
+  .upload-zone p { color: var(--muted); margin-top: 0.5rem; font-size: 0.85rem; }
+  .btn {
+    display: block; width: 100%; padding: 0.75rem; margin-top: 1rem;
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .result-row {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 0.7rem 0; border-bottom: 1px solid var(--border); gap: 1rem;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-label { color: var(--muted); font-size: 0.85rem; flex-shrink: 0; }
+  .result-value { font-weight: 600; text-align: right; font-size: 0.9rem; }
+  .tb { color: var(--red); }
+  .normal { color: var(--green); }
+  .rejected { color: var(--amber); font-size: 0.78rem; }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid var(--muted); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status { text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em; }
+  .examples { margin-top: 1rem; }
+  .examples-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; }
+  .example-btn {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem;
+    cursor: pointer; margin-right: 0.4rem; margin-bottom: 0.4rem; transition: border-color 0.2s;
+  }
+  .example-btn:hover { border-color: var(--accent); }
+  .load-bar {
+    height: 4px; background: var(--border); border-radius: 2px; margin-top: 0.5rem;
+    overflow: hidden; display: none;
+  }
+  .load-bar.show { display: block; }
+  .load-bar-fill {
+    height: 100%; background: var(--accent); width: 0%;
+    transition: width 0.3s;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🫁 TB X-Ray AI Detector</h1>
+  <p class="subtitle">AI-powered Tuberculosis detection with drug-resistance prediction — runs entirely in your browser</p>
+  <p class="repo-link"><a href="https://github.com/manassawant607-arch/tb-xray-ai-detector">📦 GitHub repository</a></p>
+  <div class="disclaimer">
+    ⚠️ Research / educational prototype — NOT a medical device. Do not use for diagnosis or treatment decisions.
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Upload Chest X-ray</h2>
+      <div class="upload-zone" id="dropZone">
+        <img id="preview" style="display:none;">
+        <p id="dropText">Drop image here · click to upload</p>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" style="display:none;">
+      <button class="btn" id="submitBtn" disabled>Analyze X-ray</button>
+      <div class="examples">
+        <p class="examples-title">Or try a sample:</p>
+        <button class="example-btn" data-example="tb">TB X-ray</button>
+        <button class="example-btn" data-example="normal">Normal X-ray</button>
+        <button class="example-btn" data-example="wrong">Wrong Photo</button>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="load-bar" id="loadBar"><div class="load-bar-fill" id="loadFill"></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Result</h2>
+      <div class="result-row">
+        <span class="result-label">TB Detection</span>
+        <span class="result-value" id="tbResult">—</span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Mutation Analysis</span>
+        <span class="result-value" id="mutationResult">—</span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Drug Resistance Prediction</span>
+        <span class="result-value" id="resistanceResult">—</span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Treatment Recommendation</span>
+        <span class="result-value" id="treatmentResult">—</span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Confidence</span>
+        <span class="result-value" id="confidenceResult">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
