@@ -182,6 +182,107 @@ def predict_tb(image):
 
 > The mutation / resistance / treatment outputs are **prototype placeholders** for demonstration and are not derived from clinical models.
 
+### Drug Resistance Prediction (detailed)
+
+The drug-resistance / mutation / treatment outputs are a **prototype pipeline**
+that mirrors the original `ai_drp.py` logic. They illustrate how a full DR-TB
+(drug-resistant tuberculosis) decision support system *could* be wired together.
+**None of these outputs are clinically validated** — they are for demonstration.
+
+The pipeline has two layers:
+
+#### Layer 1 — rule-based mutation → resistance → treatment mapping
+
+When the CNN classifies an image as **TB Detected** (sigmoid > 0.5), a fixed
+prototype rule chain is applied (see `tb_inference.py` lines 16–20 and
+`ai_drp.py` lines 215–228):
+
+| Step | Input | Rule | Output |
+|---|---|---|---|
+| 1. TB Detection | sigmoid score | `> 0.5` → TB Detected, else Normal | `tb_result` |
+| 2. Mutation Analysis | `tb_result` | TB Detected → `rpoB mutation detected` | `mutation` |
+| 3. Drug Resistance | `mutation` | contains `rpoB` → Rifampicin Resistant (Possible MDR-TB) | `resistance` |
+| 4. Treatment | `resistance` | MDR-TB → Bedaquiline + Linezolid + Levofloxacin | `treatment` |
+
+Decision tree (TB-positive branch):
+
+```
+TB Detected (sigmoid > 0.5)
+  │
+  ├── Mutation:        rpoB mutation detected
+  │     │
+  │     ├── Resistance: Rifampicin Resistant (Possible MDR-TB)
+  │     │     │
+  │     │     └── Treatment: Bedaquiline + Linezolid + Levofloxacin
+  │     │                      (second-line MDR-TB regimen)
+  │     │
+  │     └── (else) Drug Sensitive
+  │           └── Treatment: Isoniazid + Rifampicin + Pyrazinamide + Ethambutol
+  │                          (first-line standard therapy)
+```
+
+TB-negative branch:
+
+```
+Normal (sigmoid ≤ 0.5)
+  ├── Mutation:    No mutation detected
+  ├── Resistance:  Drug Sensitive
+  └── Treatment:   Standard TB therapy
+```
+
+**Why `rpoB`?** Rifampicin resistance — the hallmark of MDR-TB — is most
+commonly caused by mutations in the *rpoB* gene (encoding the RNA polymerase
+β-subunit). The prototype assumes a TB-positive X-ray implies an `rpoB`
+mutation to demonstrate the downstream resistance/treatment logic.
+
+#### Layer 2 — RandomForest incidence regressor (`train_real_model.py`)
+
+A separate `RandomForestRegressor` is trained on the Kaggle
+*tuberculosis-trends-global-and-regional-insights* dataset (mirrors
+`ai_drp.py` lines 144–161):
+
+- **Features (`X`):** `TB_Cases`, `TB_Deaths`, `TB_Treatment_Success_Rate`
+- **Target (`y`):** `TB_Incidence_Rate`
+- **Split:** 80/20 (`test_size=0.2`)
+- **Model:** `RandomForestRegressor()` (defaults)
+- **Trained in:** `train_real_model.train_resistance()` → prints train/test R²
+
+| Metric | Value |
+|---|---|
+| Train R² | 0.851 |
+| Test R² | −0.154 |
+
+> The negative test R² means the regressor overfits and **does not generalise**
+> — expected for a prototype on small/noisy trend data. It is **not** used for
+> any patient-level resistance prediction; it only demonstrates the
+> trends-analysis stage of the original Colab pipeline.
+
+#### What the app shows
+
+`app.py` uses **Layer 1** (the rule-based mapping) for the four text outputs.
+A confidence score (sigmoid distance from the 0.5 threshold) is also returned:
+
+| Output field | TB Detected | Normal |
+|---|---|---|
+| TB Detection | `TB Detected` | `Normal` |
+| Mutation Analysis | `rpoB mutation detected` | `No mutation detected` |
+| Drug Resistance Prediction | `Rifampicin Resistant (Possible MDR-TB)` | `Drug Sensitive` |
+| Treatment Recommendation | `Bedaquiline + Linezolid + Levofloxacin` | `Standard TB therapy` |
+| Confidence | sigmoid % | sigmoid % |
+
+#### Limitations & clinical context
+
+- **No molecular data.** Real DR-TB diagnosis requires GeneXpert MTB/RIF,
+  line-probe assays (LPA), or culture-based drug-susceptibility testing (DST)
+  — not an X-ray image. The `rpoB` mutation here is a **placeholder**, not a
+  prediction.
+- **MDR-TB vs XDR-TB.** The prototype only models rifampicin resistance
+  (MDR-TB). Extensively drug-resistant TB (XDR-TB) requires additional
+  fluoroquinolone + second-line injectable resistance data.
+- **Treatment regimens are illustrative.** Actual MDR-TB treatment follows
+  WHO guidelines and is individualised. Do **not** use this output for
+  treatment decisions.
+
 ### Chest X-ray validity gate (only X-rays are detected)
 
 A **wrong photo** (a colourful photograph, a screenshot, a blank or tiny image) is
