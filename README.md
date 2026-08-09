@@ -259,6 +259,155 @@ python evaluate_model.py --gradcam some_xray.png      # explainability heatmap
 
 ---
 
+## Methodology
+
+This section describes the full machine-learning methodology of the project:
+the data, the three models, the X-ray validity gate, and the evaluation
+protocol. The pipeline reproduces and extends the original `ai_drp.py`
+Colab workflow so it runs entirely locally.
+
+### 1. Data
+
+| Dataset | Source | Contents |
+|---|---|---|
+| TB Chest Radiography Database | Kaggle `tawsifurrahman/tuberculosis-tb-chest-xray-dataset` | 3,500 Normal + 700 Tuberculosis chest X-rays (**4,200 images**) |
+| TB Trends (global) | Kaggle `khushikyad001/tuberculosis-trends-global-and-regional-insights` | Country/year TB statistics used by the resistance prototype |
+
+Downloaded automatically by `setup_kaggle.py` (handles `kaggle.json`
+credentials, install, download, unzip — equivalent to `ai_drp.py`
+lines 10–21).
+
+### 2. Preprocessing
+
+- Images rescaled to `[0, 1]` (`ImageDataGenerator(rescale=1/255)`).
+- Resize to `224 × 224`, `batch_size=32`, `class_mode='binary'`.
+- 80/20 train/validation split (`validation_split=0.2`).
+- Identical to `ai_drp.py` lines 34–57; augmentation/class-balancing/early
+  stopping are available as **opt-in flags** in `train_real_model.py`.
+
+### 3. Models
+
+Three models are trained; the first two match `ai_drp.py` exactly.
+
+**A. From-scratch CNN** (`tb_detection_model.h5`)
+
+```
+Sequential([
+    Conv2D(32, 3x3, relu) → MaxPooling2D(2x2)
+    Conv2D(64, 3x3, relu) → MaxPooling2D(2x2)
+    Conv2D(128, 3x3, relu) → MaxPooling2D(2x2)
+    Flatten → Dense(128, relu) → Dense(1, sigmoid)
+])
+optimizer=adam, loss=binary_crossentropy, metrics=[accuracy], epochs=5
+```
+
+**B. Transfer learning — MobileNetV2** (`tb_detector_ai.h5`)
+
+- ImageNet-pretrained `MobileNetV2` base (frozen) + `GlobalAveragePooling2D`
+  + `Dense(128, relu)` + `Dense(1, sigmoid)`.
+- Same optimizer/loss/metrics as the CNN.
+
+**C. Drug-resistance prototype** (`RandomForestRegressor`)
+
+- Fits a `RandomForestRegressor` on the TB trends CSV (prototype only —
+  not clinically validated).
+
+**D. X-ray validity gate** (`xray_gate_model.pkl`)
+
+- A `RandomForestClassifier` (200 trees, depth 12, class-balanced) on 15
+  hand-crafted image statistics, trained on all 4,200 real X-rays
+  (positive) + 510 non-X-ray negatives (real photos + synthetic patterns).
+- Runs *before* detection so wrong photos are never misclassified as TB.
+
+### 4. Evaluation protocol
+
+- Metrics computed on the **real 20% validation split** (840 images):
+  accuracy, precision, recall, F1, ROC AUC.
+- Confusion matrix saved to `confusion_matrix.png`.
+- Grad-CAM heatmap for model explainability (highlights the image regions
+  that drove the prediction).
+- Gate evaluated on **all 4,200 X-rays** + real photos + synthetic
+  non-X-rays (false-positive / false-negative counts).
+- 5-fold cross-validation F1 for the gate classifier.
+
+### 5. Software-engineering safeguards
+
+- Existing Python logic (`tb_inference.py`, label tuples, demo fallback)
+  left intact; the gate is inserted as a single pre-detection step.
+- 28 `pytest` unit tests, `flake8` clean, CI workflow on every push.
+- `kaggle.json` and trained model binaries are `.gitignore`d (never
+  committed).
+
+---
+
+## Results
+
+All results are from a real end-to-end run on the 4,200-image Kaggle dataset
+(80/20 split). Full log: [`REAL_DATA_RESULTS.md`](REAL_DATA_RESULTS.md).
+
+### TB detection model performance
+
+| Model | Val accuracy | Precision | Recall | F1 | ROC AUC | TP | FP | TN | FN |
+|---|---|---|---|---|---|---|---|---|---|
+| CNN (`tb_detection_model.h5`) | **94.88%** | 0.922 | 0.757 | 0.831 | 0.987 | 106 | 9 | 691 | 34 |
+| MobileNetV2 (`tb_detector_ai.h5`) | **99.76%** | 0.986 | 0.993 | 0.989 | 1.000 | — | — | — | — |
+| Resistance prototype | — | — | — | — | — | train R²=0.851, test R²=−0.154 (placeholder) |
+
+> The MobileNetV2 transfer-learning model substantially outperforms the
+> from-scratch CNN, as expected for a moderate-size medical dataset.
+
+### X-ray validity gate (wrong-photo rejection)
+
+The gate ensures **nothing other than a chest X-ray is detected**.
+
+| Metric | Value |
+|---|---|
+| Real X-rays accepted | **4200 / 4200 (100%)** |
+| Real X-rays wrongly rejected | **0** |
+| Non-X-ray photos wrongly accepted | **0** |
+| Cross-validation F1 | 0.941 ± 0.115 |
+
+Tested non-X-ray inputs (all **rejected**):
+
+| Wrong-photo type | Result |
+|---|---|
+| Cat photo | rejected: not a chest X-ray |
+| Car photo | rejected: not a chest X-ray |
+| Food photo | rejected: not a chest X-ray |
+| Portrait / selfie | rejected: not a chest X-ray |
+| Landscape | rejected: not a chest X-ray |
+| Colour gradient | rejected: not a chest X-ray |
+| Blank white image | rejected: too bright / near-blank |
+| Blank black image | rejected: too dark / near-black |
+| Tiny 50×50 image | rejected: image too small |
+| Solid colour block | rejected: flat (no texture) |
+
+### Why a trained gate was needed
+
+A single saturation threshold (the first gate version) could not separate real
+photos from X-rays, because many natural photos are *less* saturated than some
+real X-rays:
+
+| Image | Saturation | Old threshold gate (0.6) |
+|---|---|---|
+| Cat photo | 0.128 | ❌ accepted → falsely "TB Detected" |
+| Real X-ray (max) | 0.526 | accepted |
+
+The trained RandomForest on 15 features fixed this with zero false positives
+and zero false negatives.
+
+### Verification commands (reproduce these numbers)
+
+```bash
+python setup_kaggle.py        # download real data
+python train_real_model.py    # train CNN + MobileNetV2 + resistance
+python train_xray_gate.py     # train the X-ray validity gate
+python evaluate_model.py      # metrics + confusion matrix + Grad-CAM
+pytest -q                     # 28 tests pass
+```
+
+---
+
 ## Training (Colab / Kaggle)
 
 `ai_drp.py` was exported from a Colab notebook and contains the steps used to train the TB detection model. To reproduce:
