@@ -2,3 +2,4 @@ gradio
 tensorflow
 numpy
 pillow
+scikit-learn
