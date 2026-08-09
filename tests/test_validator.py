@@ -71,7 +71,7 @@ def test_accepts_textured_grayscale():
 def test_rejects_colour_photo():
     ok, reason = xv.is_chest_xray(make_colour_photo())
     assert not ok
-    assert "not a chest X-ray" in reason
+    assert reason.startswith("rejected")
 
 
 def test_rejects_blank_white():

@@ -28,6 +28,7 @@ MAX_ASPECT = 2.5         # reject very wide / tall strips
 MIN_BRIGHTNESS = 0.04    # reject pure-black images
 MAX_BRIGHTNESS = 0.985   # reject pure-white / blank images
 MIN_STD = 0.015          # reject flat (uniform) images: X-rays have texture
+MAX_SATURATION = 0.6     # reject high-saturation colour images (gradients, etc.)
 
 _gate = None
 
@@ -132,6 +133,8 @@ def is_chest_xray(image):
         return False, "rejected: image is too bright / near-blank"
     if std < MIN_STD:
         return False, "rejected: image is flat (no texture) — not an X-ray"
+    if saturation(arr) > MAX_SATURATION:
+        return False, "rejected: image is too colourful to be a chest X-ray"
 
     gate = _load_gate()
     if gate is None:
