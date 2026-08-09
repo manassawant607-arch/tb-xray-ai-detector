@@ -29,6 +29,9 @@ async function loadModels(onProgress) {
 
   modelsLoading = (async () => {
     ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/";
+    // GitHub Pages (and most static hosts) don't set COOP/COEP headers, so
+    // SharedArrayBuffer is unavailable → force single-threaded WASM backend.
+    ort.env.wasm.numThreads = 1;
     onProgress(5);
     const gateResp = await fetch(GATE_MODEL_URL);
     const gateBuf = await gateResp.arrayBuffer();
