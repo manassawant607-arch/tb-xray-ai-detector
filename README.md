@@ -35,6 +35,126 @@ Two entry points are provided:
 
 A trained Keras model named `tb_detection_model.h5` is expected in the repository root to run inference.
 
+## Architecture
+
+![System Architecture](docs/architecture.png)
+
+The system is a **two-stage pipeline** — a validity gate feeds a detection
+model, which feeds a rule-based resistance pipeline:
+
+### Stage 0 — Training (offline)
+
+| Script | Produces | Purpose |
+|---|---|---|
+| `train_real_model.py` | `tb_detection_model.h5` | CNN + MobileNetV2 trained on 4,200 real TB/Normal X-rays (5 epochs) |
+| `train_xray_gate.py` | `xray_gate_model.pkl` | RandomForest classifier that distinguishes X-rays from non-X-rays |
+| `train_resistance()` | (in-memory) | RandomForestRegressor on TB trends CSV (prototype, not used in app) |
+
+### Stage 1 — X-ray validity gate (`xray_validator.py`)
+
+Every uploaded image passes through the gate **before** any TB detection:
+
+```
+uploaded image
+   │
+   ├── heuristic pre-filter (size, aspect ratio, channels, saturation, edge density)
+   │     └── fail → REJECT "not a chest X-ray"
+   │
+   └── ML gate (RandomForestClassifier on image features)
+         ├── non-X-ray → REJECT
+         └── chest X-ray → proceed to Stage 2
+```
+
+**Wrong photos** (colour photos, screenshots, blanks, tiny images) are rejected
+here and never reach the detection model — so they can never be falsely flagged
+as TB. **Right photos** (valid chest X-rays) proceed.
+
+### Stage 2 — TB detection (`tb_inference.py`)
+
+```
+valid chest X-ray
+   │
+   ├── preprocess: resize 224x224 RGB, normalize [0,1], batch dim
+   │
+   └── CNN / MobileNetV2 → sigmoid score p ∈ [0,1]
+         ├── p > 0.5 → "TB Detected"
+         └── p ≤ 0.5 → "Normal"
+```
+
+### Stage 3 — Drug resistance pipeline (rule-based)
+
+```
+TB Detected
+   │
+   ├── Mutation:        "rpoB mutation detected"
+   ├── Resistance:      "Rifampicin Resistant (Possible MDR-TB)"
+   └── Treatment:       "Bedaquiline + Linezolid + Levofloxacin"
+
+Normal
+   │
+   ├── Mutation:        "No mutation detected"
+   ├── Resistance:      "Drug Sensitive"
+   └── Treatment:       "Standard TB therapy"
+```
+
+### Stage 4 — Output (5 fields to the Gradio UI)
+
+| Field | Source |
+|---|---|
+| TB Detection | Stage 2 (CNN sigmoid) |
+| Mutation Analysis | Stage 3 (rule) |
+| Drug Resistance Prediction | Stage 3 (rule) |
+| Treatment Recommendation | Stage 3 (rule) |
+| Confidence | `max(p, 1-p) × 100` |
+
+### Component map
+
+```
+┌─────────────┐     ┌──────────┐     ┌─────────────────┐     ┌──────────────┐
+│  Gradio UI  │────▶│ app.py   │────▶│ xray_validator  │────▶│ tb_inference │
+│  (upload)   │     │ predict()│     │ is_chest_xray() │     │ predict_tb() │
+└─────────────┘     └──────────┘     └─────────────────┘     └──────┬───────┘
+                       ▲ 5 outputs              │ reject                │ sigmoid
+                       │ to UI                  ▼                       ▼
+                       │              ┌──────────────────┐    ┌────────────────┐
+                       └──────────────│ interpret_pred() │◀───│ Keras model    │
+                                      │ rpoB → MDR-TB    │    │ .h5 (trained)  │
+                                      └──────────────────┘    └────────────────┘
+```
+
+## App screenshots
+
+### Home screen (inference mode)
+
+The app loads with a status banner showing whether a trained model is present:
+
+![App home screen](docs/app_home.png)
+
+### TB Detected (real TB X-ray uploaded)
+
+Uploading a real TB-positive chest X-ray triggers the full resistance pipeline:
+
+![TB Detected](docs/app_tb_detected.png)
+
+### Normal (real Normal X-ray uploaded)
+
+A real Normal chest X-ray is classified as drug-sensitive:
+
+![Normal detected](docs/app_normal_detected.png)
+
+### Wrong photo rejected
+
+A non-X-ray image (photo, screenshot, blank) is rejected by the gate — all
+resistance / mutation / treatment outputs are blank, so no false TB label:
+
+![Wrong photo rejected](docs/app_wrong_photo_rejected.png)
+
+### Sample X-ray images used
+
+| TB-positive X-ray | Normal X-ray |
+|---|---|
+| ![TB sample](docs/sample_tb_xray.png) | ![Normal sample](docs/sample_normal_xray.png) |
+
 ## Repository structure
 
 ```
