@@ -1,10 +1,10 @@
 # TB X-Ray AI Detector
 
-AI-powered Tuberculosis (TB) chest X-ray detection prototype with a drug-resistance / treatment-suggestion UI, built with **TensorFlow** and **Gradio**.
+AI-powered Tuberculosis (TB) chest X-ray detection prototype with a drug-resistance / treatment-suggestion UI, built with **TensorFlow** and **ONNX Runtime Web**. The detector runs **entirely in your browser** — no server, no upload, your images never leave your device.
 
-> 🚀 **Live demo:** <https://work-1-ojoykhvwxsjjqbog.prod-runtime.all-hands.dev/>
+> 🚀 **Live app (permanent):** <https://manassawant607-arch.github.io/tb-xray-ai-detector/>
 >
-> Upload a chest X-ray and get **TB Detection**, **Mutation Analysis**, **Drug Resistance Prediction**, **Treatment Recommendation**, and a **Confidence** score. Try the built-in example images under the input. Currently running in **inference mode** with a trained CNN model.
+> Upload a chest X-ray and get **TB Detection**, **Mutation Analysis**, **Drug Resistance Prediction**, **Treatment Recommendation**, and a **Confidence** score — all computed client-side. A **validity gate** first checks the image is a real chest X-ray; "wrong photos" (colour photos, screenshots, blanks) are rejected before detection so they can never be falsely flagged as TB.
 
 > ⚠️ **Medical disclaimer:** This project is a research / educational prototype and is **NOT** a medical device. Do **not** use it for diagnosis or treatment decisions. Always consult a qualified healthcare professional.
 
@@ -167,6 +167,12 @@ tb-xray-ai-detector/
 ├── requirements.txt    # Python dependencies
 ├── tests/              # pytest unit tests
 ├── samples/            # Synthetic placeholder images + dataset docs
+├── web/                # Browser app (ONNX Runtime Web) — deployed to GitHub Pages
+│   ├── index.html      #   upload UI + sample buttons
+│   ├── app.js          #   client-side gate + ONNX inference + DR pipeline
+│   ├── models/         #   tb_model.onnx + xray_gate.onnx
+│   ├── samples/        #   TB / Normal / wrong-photo example images
+│   └── screenshots/    #   app screenshots used in this README
 ├── .github/workflows/  # CI (lint + test + dependency check)
 ├── .flake8             # Lint config
 └── README.md
@@ -176,22 +182,82 @@ tb-xray-ai-detector/
 
 ## Quickstart
 
-### Try the live demo (no setup)
+### Try the live app (no setup, runs in your browser)
 
-A hosted instance is already running — no clone or install required:
+A permanent, serverless deployment is hosted on GitHub Pages — no clone or
+install required, and **all inference happens in your browser** (images are
+never uploaded anywhere):
 
-> 🚀 **<https://work-1-ojoykhvwxsjjqbog.prod-runtime.all-hands.dev/>**
+> 🚀 **<https://manassawant607-arch.github.io/tb-xray-ai-detector/>**
 
 1. Open the link in your browser.
-2. Click **"Click to Upload"** (or drag) a chest X-ray image, or use one of the
-   built-in **Examples** below the input.
-3. Click **Submit**.
+2. Click **"Upload Chest X-ray"** (or drag) a chest X-ray image, or use one of
+   the built-in **sample** buttons: **TB X-ray**, **Normal X-ray**, or
+   **Wrong Photo** (to see the validity gate reject a non-X-ray).
+3. Click **Analyze X-ray**.
 4. Read the five outputs: **TB Detection**, **Mutation Analysis**, **Drug
    Resistance Prediction**, **Treatment Recommendation**, and **Confidence**.
 
-The banner above the input shows whether the app is in
-`✅ Inference mode` (a trained model is loaded) or `⚠️ Demo mode` (placeholder
-output). You can also call it programmatically via the **Use via API** button.
+The first analysis downloads the ONNX models (~44 MB total) into your browser
+cache; subsequent analyses are instant. The **X-ray validity gate** runs first
+— a "wrong photo" is rejected *before* detection, so it can never be falsely
+flagged as TB.
+
+#### App screenshots
+
+| TB Detected (100%) | Normal (97.5%) | Wrong photo rejected |
+|---|---|---|
+| ![TB Detected](web/screenshots/app_tb_detected.png) | ![Normal](web/screenshots/app_normal.png) | ![Wrong photo rejected](web/screenshots/app_wrong_photo_rejected.png) |
+
+*Left:* a TB chest X-ray is detected with `rpoB mutation → Rifampicin Resistant
+(Possible MDR-TB) → Bedaquiline + Linezolid + Levofloxacin`. *Middle:* a normal
+chest X-ray is classified `Normal → Drug Sensitive → Standard TB therapy`.
+*Right:* a colourful non-X-ray photograph is **rejected by the validity gate**
+before reaching the detection model — "wrong photo not detected, right photo
+detect".
+
+#### Browser app architecture
+
+```
+User selects image (upload or sample)
+        │
+        ▼
+┌──────────────────────────┐
+│ 1. Heuristic pre-filter   │   app.js: dimension / aspect /
+│    (no model)             │   brightness / std / saturation
+└──────────────────────────┘
+        │
+   ┌────┴────┐
+   │ FAIL    │ PASS
+   ▼         │
+rejected  ┌──▼───────────────────────┐
+          │ 2. ONNX X-ray gate        │  xray_gate.onnx (RandomForest)
+          │    (is it a chest X-ray?) │  15 image statistics
+          └───────────────────────────┘
+                │
+           ┌────┴────┐
+           │ NO      │ YES → return "rejected: not a chest X-ray"
+           ▼         │
+        rejected  ┌──▼───────────────────────┐
+                  │ 3. ONNX TB detector       │  tb_model.onnx (CNN /
+                  │    sigmoid score [0,1]    │  MobileNetV2, 224×224)
+                  └───────────────────────────┘
+                        │
+                        ▼
+                  ┌───────────────────────────┐
+                  │ 4. Resistance pipeline     │  rpoB → Rifampicin
+                  │    + treatment + confidence│  Resistant → regimen
+                  └───────────────────────────┘
+                        │
+                        ▼
+                  5 outputs rendered to UI
+                  (TB / Mutation / Resistance /
+                   Treatment / Confidence)
+```
+
+The browser app mirrors the Python pipeline (`xray_validator.py` +
+`tb_inference.py`) but runs fully client-side via ONNX Runtime Web, so no image
+data ever leaves the user's device.
 
 ### 1. Clone the repository
 
