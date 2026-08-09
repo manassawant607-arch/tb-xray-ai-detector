@@ -276,9 +276,7 @@ submitBtn.addEventListener("click", async () => {
   loadBar.classList.add("show");
 
   try {
-    window._dbg && window._dbg("loading models, ort=" + (typeof ort));
     await loadModels(pct => { loadFill.style.width = pct + "%"; if (pct < 100) statusEl.textContent = `Loading AI models... ${pct}%`; });
-    window._dbg && window._dbg("models loaded");
     loadFill.style.width = "100%";
     statusEl.textContent = "Running X-ray validity gate + detection model...";
     submitBtn.innerHTML = '<span class="spinner"></span> Analyzing...';
@@ -287,11 +285,9 @@ submitBtn.addEventListener("click", async () => {
       .forEach(id => { const el = document.getElementById(id); el.textContent = "..."; el.className = "result-value"; });
 
     const img = await loadImage(preview.src);
-    window._dbg && window._dbg("img loaded " + img.naturalWidth + "x" + img.naturalHeight);
 
     // Stage 1: gate
     const gate = await isChestXray(img);
-    window._dbg && window._dbg("gate ok=" + gate.ok + " reason=" + gate.reason);
     if (!gate.ok) {
       document.getElementById("tbResult").textContent = gate.reason;
       document.getElementById("tbResult").className = "result-value rejected";

@@ -143,27 +143,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
-<script>
-// Debug: surface any runtime errors visibly (GitHub Pages has no devtools in tests)
-window.addEventListener("error", e => {
-  const s = document.createElement("div");
-  s.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#7f1d1d;color:#fff;padding:8px;font-size:12px;z-index:9999;white-space:pre-wrap;";
-  s.textContent = "JS ERROR: " + (e.error ? e.error.stack || e.error.message : e.message);
-  document.body.appendChild(s);
-});
-window.addEventListener("unhandledrejection", e => {
-  const s = document.createElement("div");
-  s.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#7f1d1d;color:#fff;padding:8px;font-size:12px;z-index:9999;white-space:pre-wrap;";
-  s.textContent = "PROMISE REJECT: " + (e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
-  document.body.appendChild(s);
-});
-window._dbg = (msg) => {
-  const s = document.createElement("div");
-  s.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#1e3a8a;color:#fff;padding:4px;font-size:11px;z-index:9999;";
-  s.textContent = "DBG: " + msg;
-  document.body.appendChild(s);
-};
-</script>
 <script src="app.js"></script>
 </body>
 </html>
