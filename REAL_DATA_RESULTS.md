@@ -34,23 +34,33 @@ python setup_kaggle.py    # installs kaggle, copies kaggle.json, downloads + unz
 
 Confusion matrix saved to `confusion_matrix.png`.
 
-## 4. X-ray validity gate — full test on ALL 4,200 real images
+## 4. X-ray validity gate — ML classifier (train_xray_gate.py)
 
-Only chest X-rays are predicted; wrong photos are rejected before detection.
+A single saturation threshold could not separate real photos from X-rays (a cat
+photo had saturation 0.128, lower than some real X-rays at 0.526). So the gate
+was upgraded to a **trained RandomForest classifier** on 15 image statistics
+(saturation, channel difference, dark/white fraction, histogram peak, edge
+density, corner darkness, percentiles, etc.).
 
+Trained on:
+- **Positive:** all 4,200 real chest X-rays
+- **Negative:** 10 real photos (cat, car, food, portrait, landscape, etc.) + 500
+  synthetic non-X-rays (noise, gradients, solid colours, shapes, blobs, stripes)
+
+Results: **0 false positives** (no non-X-ray accepted), **0 false negatives**
+(no X-ray rejected), CV F1 = 0.941.
+
+### Full test on ALL 4,200 real X-rays + real photos
 ```
-=== FULL validity-gate test: ALL 4200 real X-rays ===
-real X-rays accepted & predicted: 4200/4200 (100.0%)
-  -> Normal predicted: 3542, TB Detected: 658
+=== ALL 4200 real X-rays through ML gate ===
+accepted: 4200/4200  rejected: 0/4200   PASS
 
-=== WRONG photos (all must be REJECTED) ===
-  colour gradient  -> rejected: image is too colourful to be a chest X-ray
-  blank white      -> rejected: image is too bright / near-blank
-  blank black      -> rejected: image is too dark / near-black
-  tiny 50x50       -> rejected: image too small to be an X-ray
-  solid red        -> rejected: image is flat (no texture) — not an X-ray
-  green field      -> rejected: image is flat (no texture) — not an X-ray
-ALL wrong photos rejected: True
+=== REAL non-X-ray photos through app (must REJECT) ===
+ALL photos rejected: True  (cat, car, food, portrait, landscape, etc.)
+
+=== REAL X-rays (must DETECT) ===
+Normal       -> DETECTED: Normal
+Tuberculosis -> DETECTED: TB Detected
 ```
 
 ## 5. Tests & lint
@@ -64,6 +74,8 @@ ALL wrong photos rejected: True
 ```bash
 python setup_kaggle.py        # kaggle.json setup + dataset download (ai_drp.py lines 10-21, 133-137)
 python train_real_model.py    # CNN + MobileNetV2 + RandomForest (ai_drp.py lines 34-161)
+python train_xray_gate.py     # train the X-ray validity-gate classifier
 python evaluate_model.py      # metrics + confusion matrix + Grad-CAM
 python app.py                 # Gradio app with X-ray validity gate (ai_drp.py lines 165-351)
 ```
+

@@ -33,3 +33,5 @@ Tuberculosis_Trends.csv
 train_real.log
 confusion_matrix.png
 gradcam_*.png
+xray_gate_model.pkl
+neg_photos/

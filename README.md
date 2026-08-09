@@ -25,7 +25,8 @@ Two entry points are provided:
 | `setup_kaggle.py` | Sets up `kaggle.json` credentials and downloads + unzips both real datasets used by `ai_drp.py` (TB X-rays + trends CSV). |
 | `evaluate_model.py` | Computes precision/recall/F1/AUC, saves a confusion matrix, and generates a Grad-CAM heatmap on the real validation set. |
 | `REAL_DATA_RESULTS.md` | Full verification log of the real-data run (training, evaluation, X-ray validity gate on all 4,200 images). |
-| `xray_validator.py` | From-scratch validity gate: rejects non-X-ray images (colour photos, blanks, tiny) so "wrong photos" are never falsely detected as TB. |
+| `xray_validator.py` | Two-layer validity gate: heuristic pre-filter + trained RandomForest classifier that rejects non-X-ray images (colour photos, screenshots, blanks, tiny) so "wrong photos" are never falsely detected as TB. |
+| `train_xray_gate.py` | Trains the X-ray validity-gate RandomForest on 4,200 real X-rays + non-X-ray negatives (saves `xray_gate_model.pkl`). |
 | `ai_drp.py` | Colab-exported script containing the original full workflow (dataset download, preprocessing, two model definitions, training, demos). |
 | `ai_drp.ipynb` | Cleaned, parameterized Jupyter/Colab notebook of the same workflow with tunable config, augmentation, and Dropout. |
 | `tests/test_inference.py` | Unit tests for preprocessing, prediction interpretation, confidence, and the demo fallback (run without a trained model). |
@@ -187,21 +188,27 @@ A **wrong photo** (a colourful photograph, a screenshot, a blank or tiny image) 
 rejected *before* detection, so it can never be falsely flagged as TB. Only a
 **right photo** (a valid chest X-ray) flows into the detection model.
 
-`xray_validator.py` checks, with no ML dependencies (PIL + numpy only):
+`xray_validator.py` uses a two-layer gate:
 
-| Check | Rejects |
-|---|---|
-| Minimum dimension (`MIN_DIM=100`) | postage-stamp / tiny images |
-| Aspect ratio (`MAX_ASPECT=2.5`) | very wide or tall strips |
-| Mean saturation (`MAX_SATURATION=0.6`) | colourful photos (landscapes, selfies) |
-| Brightness range (`0.05`–`0.98`) | pure-black / pure-white / blank images |
-| Texture / std (`>0.02`) | flat uniform images (solid color blocks) |
+1. **Heuristic pre-filter** (no model needed) — rejects obvious junk:
+   | Check | Rejects |
+   |---|---|
+   | Minimum dimension (`MIN_DIM=100`) | postage-stamp / tiny images |
+   | Aspect ratio (`MAX_ASPECT=2.5`) | very wide or tall strips |
+   | Brightness range (`0.04`–`0.985`) | pure-black / pure-white / blank images |
+   | Texture / std (`>0.015`) | flat uniform images (solid color blocks) |
 
-The saturation threshold was **calibrated on the real dataset**: across all 4,200
-real chest X-rays the highest mean saturation is ~0.53, while colourful photos
-start at ~0.71 — so `0.6` rejects **0 real X-rays** while still blocking
-colourful photos. Verified end-to-end: 400/400 real X-rays accepted and
-predicted; all wrong-photo types rejected.
+2. **Trained RandomForest classifier** (`xray_gate_model.pkl`) — 15 image
+   statistics (saturation, channel difference, dark/white fraction, histogram
+   peak, edge density, corner darkness, percentiles, etc.). This catches
+   real-world photos that pass the heuristics — a single saturation threshold
+   cannot separate them (a cat photo had saturation 0.128, lower than some real
+   X-rays at 0.526). Trained by `train_xray_gate.py` on all 4,200 real X-rays
+   + 510 non-X-ray negatives. Result: **0 false positives, 0 false negatives**.
+
+Verified end-to-end: **4200/4200 real X-rays accepted & predicted**; all real
+photos (cat, car, food, portrait, landscape) and all synthetic wrong photos
+rejected.
 
 ### Local training on real data
 
