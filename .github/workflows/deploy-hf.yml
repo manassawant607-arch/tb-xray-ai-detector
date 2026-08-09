@@ -1,0 +1,47 @@
+name: Deploy to Hugging Face Spaces
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Hugging Face Hub
+        run: pip install -U huggingface_hub
+
+      - name: Sync repo to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: akmanash/tb-xray-ai-detector-07
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          token = os.environ["HF_TOKEN"]
+          repo_id = os.environ["HF_SPACE_REPO"]
+
+          cmd = [
+              sys.executable,
+              "-m",
+              "huggingface_hub",
+              "upload",
+              repo_id,
+              ".",
+              "--repo-type",
+              "space",
+              "--token",
+              token,
+              "--commit-message",
+              "Deploy from GitHub Actions",
+          ]
+          subprocess.check_call(cmd)
+          PY
